@@ -4,7 +4,7 @@ const fs = require("fs");
 const app = express();
 const port = process.env.PORT || 3000;
 
-const token = "8085649416:AAHZXwJBRbKyMtp0UNLYNJwZaZ1u8rrLkmI"; // توکن ربات تلگرام
+const token = "YOUR_BOT_TOKEN"; // توکن ربات تلگرام
 const bot = new TelegramBot(token, { polling: true });
 
 // ذخیره تصویر تامبنیل به صورت فایل
@@ -13,6 +13,9 @@ let thumbnailPath = "";
 // هنگامی که ربات پیامی دریافت می‌کند
 bot.on("message", (msg) => {
   const chatId = msg.chat.id;
+
+  // ارسال پیام "ربات آنلاین است" زمانی که کاربر پیام می‌فرستد
+  bot.sendMessage(chatId, "ربات آنلاین است!");
 
   // بررسی اینکه آیا پیام حاوی عکس است
   if (msg.photo) {
