@@ -1,5 +1,6 @@
 const TelegramBot = require('node-telegram-bot-api');
 const express = require('express');
+const axios = require('axios');  // برای درخواست به API
 
 // توکن ربات تلگرام خود را وارد کنید
 const bot = new TelegramBot('8085649416:AAHI2L0h8ncv5zn4uaus4VrbRcF9btCcBTs', { polling: true });
@@ -9,6 +10,9 @@ let persianNames = [];
 let englishNames = [];
 let linksList = [];
 let awaitingResponse = false;  // متغیر برای جلوگیری از ارسال پیام‌های پشت سر هم
+
+// OMDb API Key
+const OMDB_API_KEY = 'http://www.omdbapi.com/?i=tt3896198&apikey=9c5e2fdd';  // توکن خود را اینجا قرار دهید
 
 // دستور /start برای ارسال پیام خوش‌آمدگویی
 bot.onText(/\/start/, (msg) => {
@@ -37,12 +41,27 @@ bot.onText(/\/start/, (msg) => {
         if (englishNames.length === linksList.length) {
           let message = '';
           
-          // ساخت پیام با فرمت جدید
-          for (let i = 0; i < englishNames.length; i++) {
-            message += `✅ ${i + 1} ${persianNames[i]} `;
-            message += '👇 '.repeat(3);  // اموجی انگشت اشاره به پایین برای هر نام فارسی
-            message += `\n⬇️ <a href="${linksList[i]}">${englishNames[i]}</a>\n\n`;  // لینک به اسم انگلیسی
-          }
+          // برای هر فیلم درخواست به API ارسال می‌کنیم
+          let promises = englishNames.map(async (name, i) => {
+            let response = await axios.get(`http://www.omdbapi.com/?t=${name}&apikey=${OMDB_API_KEY}`);
+            let data = response.data;
+            
+            // اگر اطلاعات پیدا شد
+            if (data.Response === "True") {
+              const releaseYear = data.Year || 'Unknown Year';
+              const countries = data.Country ? data.Country.split(', ') : ['Unknown Country'];
+              const countriesEmojis = countries.map(country => getFlagEmoji(country)).join(' ');  // تبدیل کشورها به اموجی پرچم
+              
+              // ساخت فرمت خروجی
+              message += `✅ ${i + 1} ${persianNames[i]} (${releaseYear}) ${countriesEmojis} 👇 👇 👇\n⬇️ <a href="${linksList[i]}">${name}</a>\n\n`;
+            } else {
+              // اگر اطلاعات پیدا نشد
+              message += `✅ ${i + 1} ${persianNames[i]} (No Data) 👇 👇 👇\n⬇️ <a href="${linksList[i]}">${name}</a>\n\n`;
+            }
+          });
+
+          // منتظر می‌مانیم تا همه درخواست‌ها تکمیل شوند
+          await Promise.all(promises);
           
           // ارسال نتیجه به کاربر
           bot.sendMessage(chatId, message, { parse_mode: 'HTML' });
@@ -54,6 +73,21 @@ bot.onText(/\/start/, (msg) => {
     });
   });
 });
+
+// برای دریافت اموجی پرچم کشورهای مختلف
+function getFlagEmoji(countryCode) {
+  const flag = {
+    'USA': '🇺🇸',
+    'UK': '🇬🇧',
+    'Iran': '🇮🇷',
+    'France': '🇫🇷',
+    'Germany': '🇩🇪',
+    'Italy': '🇮🇹',
+    // سایر کشورها را به این صورت اضافه کنید
+  };
+
+  return flag[countryCode] || '🏳️';  // در صورتی که کشور شناسایی نشود پرچم سفید را برمی‌گرداند
+}
 
 // برای جلوگیری از قطع شدن ربات در Glitch
 // این مورد ضروری است تا ربات شما همیشه فعال باشد
