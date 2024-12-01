@@ -1,66 +1,138 @@
-const express = require("express");
 const TelegramBot = require("node-telegram-bot-api");
-const fs = require("fs");
-const app = express();
-const port = process.env.PORT || 3000;
 
-const token = "YOUR_BOT_TOKEN"; // توکن ربات تلگرام
+// توکن ربات تلگرام
+const token = "7300821157:AAFpqNZQqznNqf74O-gVDDhQHCdgzv4X8pY";
 const bot = new TelegramBot(token, { polling: true });
 
-// ذخیره تصویر تامبنیل به صورت فایل
-let thumbnailPath = "";
+// دکمه‌ها و آیدی‌های مبدا و مقصد
+const mappings = {
+  ایرانی: {
+    source_id: "@MrMoovie",
+    dest_id: "@FILmoseriyalerooz_bot",
+  },
+  خارجی: {
+    source_id: "@towfilm",
+    dest_id: "@GlobCinema",
+  },
+};
 
-// هنگامی که ربات پیامی دریافت می‌کند
+// ذخیره آیدی‌ها برای کاربران
+const userMappings = {};
+
+// صف ارسال پیام
+const messageQueue = [];
+let isProcessing = false;
+
+// افزودن پیام به صف
+const addToQueue = (task) => {
+  messageQueue.push(task);
+  processQueue();
+};
+
+// پردازش صف
+const processQueue = async () => {
+  if (isProcessing || messageQueue.length === 0) return;
+  isProcessing = true;
+
+  const task = messageQueue.shift();
+  try {
+    await task(); // اجرای پیام
+  } catch (error) {
+    console.error("خطا در پردازش صف:", error);
+  }
+
+  isProcessing = false;
+  processQueue(); // ادامه پردازش پیام‌های بعدی
+};
+
+// فرمان /start
+bot.onText(/\/start/, (msg) => {
+  const chatId = msg.chat.id;
+  const options = {
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: "ایرانی", callback_data: "ایرانی" },
+          { text: "خارجی", callback_data: "خارجی" },
+        ],
+        [{ text: "ریستارت ربات", callback_data: "ریستارت" }],
+      ],
+    },
+  };
+
+  bot.sendMessage(chatId, "سلام! لطفاً یک گزینه انتخاب کنید:", options);
+});
+
+// هندلر برای انتخاب دکمه
+bot.on("callback_query", (query) => {
+  const chatId = query.message.chat.id;
+  const selectedOption = query.data;
+
+  if (mappings[selectedOption]) {
+    const { source_id, dest_id } = mappings[selectedOption];
+    userMappings[chatId] = { source_id, dest_id };
+
+    bot.sendMessage(chatId, `آیدی مبدا: ${source_id} با موفقیت ذخیره شد.`);
+    bot.sendMessage(chatId, `آیدی مقصد: ${dest_id} با موفقیت ذخیره شد.`);
+    bot.sendMessage(
+      chatId,
+      "حالا هر پیام یا رسانه‌ای که ارسال کنید، آیدی مبدا با آیدی مقصد جایگزین خواهد شد."
+    );
+  }
+
+  // هندلر برای دکمه ریستارت
+  if (selectedOption === "ریستارت") {
+    delete userMappings[chatId]; // پاک کردن اطلاعات کاربر برای ریستارت ربات
+    bot.sendMessage(chatId, "ربات با موفقیت ریستارت شد.");
+  }
+});
+
+// پردازش تصاویر
+bot.on("photo", (msg) => {
+  const chatId = msg.chat.id;
+  let caption = msg.caption;
+
+  if (caption && caption.includes("➰ لینک دانلود:")) {
+    // تغییر کپشن لینک دانلود
+    caption =
+      caption.split("➰ لینک دانلود:")[0] + "❤️@GlobCinema\n❤️@GlobCinemaNews";
+  }
+
+  addToQueue(() => bot.sendPhoto(chatId, msg.photo[0].file_id, { caption }));
+});
+
+// پردازش ویدیو
+bot.on("video", (msg) => {
+  const chatId = msg.chat.id;
+  let caption = msg.caption;
+
+  if (userMappings[chatId]) {
+    const { source_id, dest_id } = userMappings[chatId];
+    if (caption && caption.includes(source_id)) {
+      // جایگزینی آیدی مبدا با آیدی مقصد
+      caption = caption.replace(source_id, dest_id);
+    }
+  }
+
+  addToQueue(() => bot.sendVideo(chatId, msg.video.file_id, { caption }));
+});
+
+// پردازش پیام‌های متنی
 bot.on("message", (msg) => {
   const chatId = msg.chat.id;
 
-  // ارسال پیام "ربات آنلاین است" زمانی که کاربر پیام می‌فرستد
-  bot.sendMessage(chatId, "ربات آنلاین است!");
+  if (msg.text && msg.text !== "/start") {
+    let messageText = msg.text;
 
-  // بررسی اینکه آیا پیام حاوی عکس است
-  if (msg.photo) {
-    const photoId = msg.photo[msg.photo.length - 1].file_id; // انتخاب عکس با کیفیت بالا
+    if (userMappings[chatId]) {
+      const { source_id, dest_id } = userMappings[chatId];
 
-    // دریافت لینک عکس
-    bot.getFileLink(photoId).then((photoUrl) => {
-      thumbnailPath = photoUrl; // ذخیره لینک عکس برای استفاده به عنوان تامبنیل
-      bot.sendMessage(
-        chatId,
-        "تصویر تامبنیل ذخیره شد. حالا می‌توانید ویدیو را ارسال کنید!"
-      );
-    });
+      if (source_id && dest_id && messageText.includes(source_id)) {
+        // جایگزینی آیدی مبدا با آیدی مقصد
+        messageText = messageText.replace(source_id, dest_id);
+      }
+
+      addToQueue(() => bot.sendMessage(chatId, messageText));
+    }
   }
-
-  // بررسی اینکه آیا پیام حاوی ویدیو است
-  if (msg.video && thumbnailPath) {
-    const videoFileId = msg.video.file_id;
-    const messageId = msg.message_id;
-
-    // دریافت لینک ویدیو
-    bot.getFileLink(videoFileId).then((videoUrl) => {
-      // تغییر تامبنیل ویدیو
-      bot.editMessageMedia(
-        {
-          type: "video",
-          media: {
-            type: "video",
-            media: videoUrl,
-            thumb: thumbnailPath, // استفاده از تامبنیل ذخیره‌شده
-          },
-        },
-        { chat_id: chatId, message_id: messageId }
-      );
-
-      bot.sendMessage(chatId, "تامبنیل ویدیو تغییر کرد!");
-    });
-  }
-});
-
-// پیکربندی Express برای روشن نگه داشتن سرور
-app.get("/", (req, res) => {
-  res.send("Your bot is running!");
-});
-
-app.listen(port, () => {
-  console.log(`Server is running on port ${port}`);
 });
