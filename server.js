@@ -1,136 +1,77 @@
-const TelegramBot = require('node-telegram-bot-api');
+const TelegramBot = require("node-telegram-bot-api");
+const express = require("express");
 
-// توکن ربات تلگرام
-const token = '8085649416:AAFW3DEMWpguoWrGD6Xq3aC-Dl2dvXNh8fc';
-const bot = new TelegramBot(token, { polling: true });
+// توکن ربات تلگرام خود را وارد کنید
+const bot = new TelegramBot("YOUR_BOT_TOKEN", { polling: true });
 
-// دکمه‌ها و آیدی‌های مبدا و مقصد
-const mappings = {
-  "ایرانی": {
-    source_id: "@MrMoovie",
-    dest_id: "@FILmoseriyalerooz_bot"
-  },
-  "خارجی": {
-    source_id: "@towfilm",
-    dest_id: "@GlobCinema"
-  }
-};
+// برای ذخیره لیست‌ها
+let namesList = [];
+let linksList = [];
 
-// ذخیره آیدی‌ها برای کاربران
-const userMappings = {};
-
-// صف ارسال پیام
-const messageQueue = [];
-let isProcessing = false;
-
-// افزودن پیام به صف
-const addToQueue = (task) => {
-  messageQueue.push(task);
-  processQueue();
-};
-
-// پردازش صف
-const processQueue = async () => {
-  if (isProcessing || messageQueue.length === 0) return;
-  isProcessing = true;
-
-  const task = messageQueue.shift();
-  try {
-    await task(); // اجرای پیام
-  } catch (error) {
-    console.error("خطا در پردازش صف:", error);
-  }
-
-  isProcessing = false;
-  processQueue(); // ادامه پردازش پیام‌های بعدی
-};
-
-// فرمان /start
+// دستور /start برای ارسال پیام خوش‌آمدگویی
 bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
-  const options = {
-    reply_markup: {
-      inline_keyboard: [
-        [
-          { text: "ایرانی", callback_data: "ایرانی" },
-          { text: "خارجی", callback_data: "خارجی" }
-        ],
-        [
-          { text: "ریستارت ربات", callback_data: "ریستارت" }
-        ]
-      ]
-    }
-  };
-
-  bot.sendMessage(chatId, "سلام! لطفاً یک گزینه انتخاب کنید:", options);
+  bot.sendMessage(
+    chatId,
+    "سلام! برای ارسال پیوندها، ابتدا یک لیست نام ارسال کنید. هر نام باید در یک خط جداگانه باشد."
+  );
 });
 
-// هندلر برای انتخاب دکمه
-bot.on('callback_query', (query) => {
-  const chatId = query.message.chat.id;
-  const selectedOption = query.data;
-
-  if (mappings[selectedOption]) {
-    const { source_id, dest_id } = mappings[selectedOption];
-    userMappings[chatId] = { source_id, dest_id };
-
-    bot.sendMessage(chatId, `آیدی مبدا: ${source_id} با موفقیت ذخیره شد.`);
-    bot.sendMessage(chatId, `آیدی مقصد: ${dest_id} با موفقیت ذخیره شد.`);
-    bot.sendMessage(chatId, "حالا هر پیام یا رسانه‌ای که ارسال کنید، آیدی مبدا با آیدی مقصد جایگزین خواهد شد.");
-  }
-
-  // هندلر برای دکمه ریستارت
-  if (selectedOption === "ریستارت") {
-    delete userMappings[chatId]; // پاک کردن اطلاعات کاربر برای ریستارت ربات
-    bot.sendMessage(chatId, "ربات با موفقیت ریستارت شد.");
-  }
-});
-
-// پردازش تصاویر
-bot.on('photo', (msg) => {
+// دریافت لیست نام‌ها از کاربر
+bot.onText(/\/names/, (msg) => {
   const chatId = msg.chat.id;
-  let caption = msg.caption;
-
-  if (caption && caption.includes('➰ لینک دانلود:')) {
-    // تغییر کپشن لینک دانلود
-    caption = caption.split('➰ لینک دانلود:')[0] + '❤️@GlobCinema\n❤️@GlobCinemaNews';
-  }
-
-  addToQueue(() => bot.sendPhoto(chatId, msg.photo[0].file_id, { caption }));
+  bot.sendMessage(
+    chatId,
+    "لطفا یک لیست از نام‌ها را ارسال کنید. هر نام در یک خط جدید باشد."
+  );
+  bot.once("message", (response) => {
+    namesList = response.text.split("\n"); // تقسیم متن به نام‌ها
+    bot.sendMessage(
+      chatId,
+      "لیست نام‌ها دریافت شد. حالا لطفا یک لیست از لینک‌ها ارسال کنید."
+    );
+  });
 });
 
-// پردازش ویدیو
-bot.on('video', (msg) => {
+// دریافت لیست لینک‌ها از کاربر
+bot.onText(/\/links/, (msg) => {
   const chatId = msg.chat.id;
-  let caption = msg.caption;
+  bot.sendMessage(
+    chatId,
+    "لطفا یک لیست از لینک‌ها را ارسال کنید. تعداد لینک‌ها باید با تعداد نام‌ها برابر باشد."
+  );
+  bot.once("message", (response) => {
+    linksList = response.text.split("\n"); // تقسیم متن به لینک‌ها
 
-  if (userMappings[chatId]) {
-    const { source_id, dest_id } = userMappings[chatId];
-    if (caption && caption.includes(source_id)) {
-      // جایگزینی آیدی مبدا با آیدی مقصد
-      caption = caption.replace(source_id, dest_id);
-    }
-  }
+    // بررسی اینکه تعداد لینک‌ها و نام‌ها برابر باشد
+    if (namesList.length === linksList.length) {
+      let message = "";
 
-  addToQueue(() => bot.sendVideo(chatId, msg.video.file_id, { caption }));
-});
-
-// پردازش پیام‌های متنی
-bot.on('message', (msg) => {
-  const chatId = msg.chat.id;
-
-  if (msg.text && msg.text !== '/start') {
-    let messageText = msg.text;
-
-    if (userMappings[chatId]) {
-      const { source_id, dest_id } = userMappings[chatId];
-
-      if (source_id && dest_id && messageText.includes(source_id)) {
-        // جایگزینی آیدی مبدا با آیدی مقصد
-        messageText = messageText.replace(source_id, dest_id);
+      // ساخت پیام پیوندها
+      for (let i = 0; i < namesList.length; i++) {
+        message += `<a href="${linksList[i]}">${namesList[i]}</a>\n`;
       }
 
-      addToQueue(() => bot.sendMessage(chatId, messageText));
+      // ارسال نتیجه به کاربر
+      bot.sendMessage(chatId, message, { parse_mode: "HTML" });
+    } else {
+      bot.sendMessage(
+        chatId,
+        "تعداد نام‌ها و لینک‌ها باید برابر باشد. لطفا دوباره امتحان کنید."
+      );
     }
-  }
+  });
+});
+
+// برای جلوگیری از قطع شدن ربات در Glitch
+// این مورد ضروری است تا ربات شما همیشه فعال باشد
+const app = express();
+
+app.get("/", (req, res) => {
+  res.send("Bot is running!");
+});
+
+// سرور را در پورت 3000 اجرا کنید
+app.listen(3000, () => {
+  console.log("Server is running on port 3000");
 });
