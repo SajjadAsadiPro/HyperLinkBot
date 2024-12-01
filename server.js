@@ -1,19 +1,19 @@
-const TelegramBot = require("node-telegram-bot-api");
+const TelegramBot = require('node-telegram-bot-api');
 
 // توکن ربات تلگرام
-const token = "7300821157:AAFpqNZQqznNqf74O-gVDDhQHCdgzv4X8pY";
+const token = '8085649416:AAFW3DEMWpguoWrGD6Xq3aC-Dl2dvXNh8fc';
 const bot = new TelegramBot(token, { polling: true });
 
 // دکمه‌ها و آیدی‌های مبدا و مقصد
 const mappings = {
-  ایرانی: {
+  "ایرانی": {
     source_id: "@MrMoovie",
-    dest_id: "@FILmoseriyalerooz_bot",
+    dest_id: "@FILmoseriyalerooz_bot"
   },
-  خارجی: {
+  "خارجی": {
     source_id: "@towfilm",
-    dest_id: "@GlobCinema",
-  },
+    dest_id: "@GlobCinema"
+  }
 };
 
 // ذخیره آیدی‌ها برای کاربران
@@ -53,18 +53,20 @@ bot.onText(/\/start/, (msg) => {
       inline_keyboard: [
         [
           { text: "ایرانی", callback_data: "ایرانی" },
-          { text: "خارجی", callback_data: "خارجی" },
+          { text: "خارجی", callback_data: "خارجی" }
         ],
-        [{ text: "ریستارت ربات", callback_data: "ریستارت" }],
-      ],
-    },
+        [
+          { text: "ریستارت ربات", callback_data: "ریستارت" }
+        ]
+      ]
+    }
   };
 
   bot.sendMessage(chatId, "سلام! لطفاً یک گزینه انتخاب کنید:", options);
 });
 
 // هندلر برای انتخاب دکمه
-bot.on("callback_query", (query) => {
+bot.on('callback_query', (query) => {
   const chatId = query.message.chat.id;
   const selectedOption = query.data;
 
@@ -74,10 +76,7 @@ bot.on("callback_query", (query) => {
 
     bot.sendMessage(chatId, `آیدی مبدا: ${source_id} با موفقیت ذخیره شد.`);
     bot.sendMessage(chatId, `آیدی مقصد: ${dest_id} با موفقیت ذخیره شد.`);
-    bot.sendMessage(
-      chatId,
-      "حالا هر پیام یا رسانه‌ای که ارسال کنید، آیدی مبدا با آیدی مقصد جایگزین خواهد شد."
-    );
+    bot.sendMessage(chatId, "حالا هر پیام یا رسانه‌ای که ارسال کنید، آیدی مبدا با آیدی مقصد جایگزین خواهد شد.");
   }
 
   // هندلر برای دکمه ریستارت
@@ -88,21 +87,20 @@ bot.on("callback_query", (query) => {
 });
 
 // پردازش تصاویر
-bot.on("photo", (msg) => {
+bot.on('photo', (msg) => {
   const chatId = msg.chat.id;
   let caption = msg.caption;
 
-  if (caption && caption.includes("➰ لینک دانلود:")) {
+  if (caption && caption.includes('➰ لینک دانلود:')) {
     // تغییر کپشن لینک دانلود
-    caption =
-      caption.split("➰ لینک دانلود:")[0] + "❤️@GlobCinema\n❤️@GlobCinemaNews";
+    caption = caption.split('➰ لینک دانلود:')[0] + '❤️@GlobCinema\n❤️@GlobCinemaNews';
   }
 
   addToQueue(() => bot.sendPhoto(chatId, msg.photo[0].file_id, { caption }));
 });
 
 // پردازش ویدیو
-bot.on("video", (msg) => {
+bot.on('video', (msg) => {
   const chatId = msg.chat.id;
   let caption = msg.caption;
 
@@ -118,10 +116,10 @@ bot.on("video", (msg) => {
 });
 
 // پردازش پیام‌های متنی
-bot.on("message", (msg) => {
+bot.on('message', (msg) => {
   const chatId = msg.chat.id;
 
-  if (msg.text && msg.text !== "/start") {
+  if (msg.text && msg.text !== '/start') {
     let messageText = msg.text;
 
     if (userMappings[chatId]) {
