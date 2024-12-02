@@ -1,141 +1,83 @@
-const TelegramBot = require("node-telegram-bot-api");
-const axios = require("axios");
-
-// تنظیم توکن ربات تلگرام و ایجاد ربات
-const token = "8085649416:AAHI2L0h8ncv5zn4uaus4VrbRcF9btCcBTs";
-const bot = new TelegramBot(token, { polling: true });
-
-// API Key برای OMDB
-const OMDB_API_KEY = "9c5e2fdd"; // اینجا API Key خود را وارد کنید
-
-// متغیرهای وضعیت ربات
-let isPaused = false;
-let persianNames = [];
-let englishNames = [];
-let linksList = [];
-let countryNames = [];
-let awaitingResponse = false;
-
-// تابع برای تقسیم پیام‌ها بر اساس تعداد خطوط
-const sendMessageInChunks = async (chatId, message, bot, linesPerChunk = 150) => {
-  const lines = message.split("\n");
-  for (let i = 0; i < lines.length; i += linesPerChunk) {
-    const chunk = lines.slice(i, i + linesPerChunk).join("\n");
-    await bot.sendMessage(chatId, chunk, { parse_mode: "HTML" });
-  }
-};
-
-// مدیریت دستور `/start`
-bot.onText(/\/start/, (msg) => {
+// دریافت فایل اکسل از کاربر
+bot.on("document", async (msg) => {
   const chatId = msg.chat.id;
-
-  // ریست کردن تمام داده‌های قبلی
-  persianNames = [];
-  englishNames = [];
-  linksList = [];
-  countryNames = [];
-  awaitingResponse = true;
-  isPaused = false;
-
-  bot.sendMessage(
-    chatId,
-    "ربات از اول شروع شد! لطفا ابتدا یک لیست از نام‌های فارسی ارسال کنید. هر نام باید در یک خط جدید باشد."
-  );
-});
-
-// مدیریت دستور `/pause`
-bot.onText(/\/pause/, (msg) => {
-  const chatId = msg.chat.id;
-  if (!isPaused) {
-    isPaused = true;
-    bot.sendMessage(chatId, "⏸️ ربات متوقف شد. برای ادامه از دستور /resume استفاده کنید.");
-  } else {
-    bot.sendMessage(chatId, "⏸️ ربات قبلاً متوقف شده است.");
-  }
-});
-
-// مدیریت دستور `/resume`
-bot.onText(/\/resume/, (msg) => {
-  const chatId = msg.chat.id;
-  if (isPaused) {
-    isPaused = false;
-    bot.sendMessage(chatId, "▶️ ربات فعال شد. می‌توانید ادامه دهید.");
-  } else {
-    bot.sendMessage(chatId, "▶️ ربات از قبل فعال است.");
-  }
-});
-
-// دریافت اطلاعات موردنیاز به ترتیب
-bot.on("message", async (msg) => {
-  const chatId = msg.chat.id;
+  const fileId = msg.document.file_id;
 
   if (isPaused) {
     bot.sendMessage(chatId, "⏸️ ربات متوقف است. لطفاً با دستور /resume آن را فعال کنید.");
     return;
   }
 
-  if (awaitingResponse && !msg.text.startsWith("/")) {
-    // ذخیره لیست نام‌های فارسی
-    if (persianNames.length === 0) {
-      persianNames = msg.text.split("\n");
-      bot.sendMessage(
-        chatId,
-        "لیست نام‌های فارسی دریافت شد. حالا لطفا یک لیست از نام‌های انگلیسی ارسال کنید."
-      );
+  try {
+    // دانلود فایل اکسل
+    console.log("در حال دانلود فایل از تلگرام...");
+    const file = await bot.getFile(fileId);
+    const filePath = `https://api.telegram.org/file/bot${token}/${file.file_path}`;
+    const fileResponse = await axios.get(filePath, { responseType: "arraybuffer" });
+    
+    // ذخیره فایل اکسل به صورت موقت
+    const fileName = `temp_${file.document.file_name}`;
+    fs.writeFileSync(fileName, fileResponse.data);
+    console.log("فایل اکسل دانلود شد و ذخیره گردید.");
+
+    // خواندن داده‌ها از فایل اکسل
+    const workbook = xlsx.readFile(fileName);
+    const sheet = workbook.Sheets[workbook.SheetNames[0]]; // فرض می‌کنیم اطلاعات در اولین شیت هستند
+    const jsonData = xlsx.utils.sheet_to_json(sheet);
+
+    if (!jsonData || jsonData.length === 0) {
+      throw new Error("داده‌های موجود در فایل اکسل خالی است یا به درستی استخراج نشده‌اند.");
     }
-    // ذخیره لیست نام‌های انگلیسی
-    else if (englishNames.length === 0) {
-      englishNames = msg.text.split("\n");
-      bot.sendMessage(
-        chatId,
-        "لیست نام‌های انگلیسی دریافت شد. حالا لطفا یک لیست از لینک‌ها ارسال کنید."
-      );
-    }
-    // ذخیره لینک‌ها
-    else if (linksList.length === 0) {
-      linksList = msg.text.split("\n");
-      bot.sendMessage(
-        chatId,
-        "لیست لینک‌ها دریافت شد. حالا لطفا یک لیست از نام کشورها (به فارسی) ارسال کنید."
-      );
-    }
-    // ذخیره لیست نام کشورها
-    else if (countryNames.length === 0) {
-      countryNames = msg.text.split("\n");
 
-      if (
-        persianNames.length === englishNames.length &&
-        englishNames.length === linksList.length &&
-        linksList.length === countryNames.length
-      ) {
-        let message = "";
+    console.log("داده‌ها از فایل اکسل خوانده شدند.");
 
-        for (let i = 0; i < englishNames.length; i++) {
-          const name = englishNames[i];
-          try {
-            const response = await axios.get(
-              `http://www.omdbapi.com/?t=${name}&apikey=${OMDB_API_KEY}`
-            );
-            const data = response.data;
+    // استخراج داده‌ها از JSON
+    const persianNames = [];
+    const englishNames = [];
+    const linksList = [];
+    const countryNames = [];
 
-            const releaseYear = data.Response === "True" ? data.Year || "Unknown Year" : "No Data";
+    // فرض می‌کنیم سرتیترهای شما به این شکل باشند:
+    const columns = {
+      persian: "نام فارسی",
+      english: "نام انگلیسی",
+      link: "لینک در کانال",
+      country: "کشور"
+    };
 
-            message += `✅ ${i + 1} ${persianNames[i]} (${releaseYear}) ${countryNames[i]} 👇 👇 👇\n⬇️ <a href="${linksList[i]}">${name}</a>\n\n`;
-          } catch (error) {
-            console.error(`Error fetching data for ${name}:`, error.message);
-            message += `❌ ${i + 1} ${persianNames[i]} - خطا در دریافت اطلاعات.\n\n`;
-          }
-        }
+    jsonData.forEach((row) => {
+      persianNames.push(row[columns.persian]);
+      englishNames.push(row[columns.english]);
+      linksList.push(row[columns.link]);
+      countryNames.push(row[columns.country]);
+    });
 
-        // ارسال نتیجه به صورت تقسیم‌شده
-        await sendMessageInChunks(chatId, message, bot, 150); // هر پیام شامل 150 خط
-      } else {
-        bot.sendMessage(
-          chatId,
-          "تعداد نام‌های فارسی، انگلیسی، لینک‌ها و کشورها باید برابر باشد. لطفا دوباره امتحان کنید."
+    // ارسال اطلاعات به کاربر
+    let message = "";
+    for (let i = 0; i < englishNames.length; i++) {
+      const name = englishNames[i];
+      try {
+        const response = await axios.get(
+          `http://www.omdbapi.com/?t=${name}&apikey=${OMDB_API_KEY}`
         );
+        const data = response.data;
+
+        const releaseYear = data.Response === "True" ? data.Year || "Unknown Year" : "No Data";
+
+        message += `✅ ${i + 1} ${persianNames[i]} (${releaseYear}) ${countryNames[i]} 👇 👇 👇\n⬇️ <a href="${linksList[i]}">${name}</a>\n\n`;
+      } catch (error) {
+        console.error(`Error fetching data for ${name}:`, error.message);
+        message += `❌ ${i + 1} ${persianNames[i]} - خطا در دریافت اطلاعات.\n\n`;
       }
-      awaitingResponse = false; // پایان انتظار
     }
+
+    // ارسال نتیجه به صورت تقسیم‌شده
+    await sendMessageInChunks(chatId, message, bot, 150); // هر پیام شامل 150 خط
+
+    // حذف فایل موقت بعد از استفاده
+    fs.unlinkSync(fileName);
+  } catch (error) {
+    console.error("Error processing file:", error.message);
+    bot.sendMessage(chatId, `❌ خطایی در پردازش فایل رخ داد: ${error.message}. لطفا دوباره تلاش کنید.`);
   }
 });
