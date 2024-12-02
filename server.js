@@ -8,7 +8,8 @@ const bot = new TelegramBot(token, { polling: true });
 // API Key برای OMDB
 const OMDB_API_KEY = "9c5e2fdd"; // اینجا API Key خود را وارد کنید
 
-// متغیر برای ذخیره نام‌ها و لینک‌ها
+// متغیرهای وضعیت ربات
+let isPaused = false;
 let persianNames = [];
 let englishNames = [];
 let linksList = [];
@@ -16,12 +17,7 @@ let countryNames = [];
 let awaitingResponse = false;
 
 // تابع برای تقسیم پیام‌ها بر اساس تعداد خطوط
-const sendMessageInChunks = async (
-  chatId,
-  message,
-  bot,
-  linesPerChunk = 50
-) => {
+const sendMessageInChunks = async (chatId, message, bot, linesPerChunk = 50) => {
   const lines = message.split("\n");
   for (let i = 0; i < lines.length; i += linesPerChunk) {
     const chunk = lines.slice(i, i + linesPerChunk).join("\n");
@@ -29,22 +25,54 @@ const sendMessageInChunks = async (
   }
 };
 
-// هنگامی که ربات شروع می‌شود، از کاربر می‌خواهد نام‌ها را وارد کند
+// مدیریت دستور `/start`
 bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
 
-  if (!awaitingResponse) {
-    awaitingResponse = true;
-    bot.sendMessage(
-      chatId,
-      "سلام! لطفا ابتدا یک لیست از نام‌های فارسی ارسال کنید. هر نام باید در یک خط جدید باشد."
-    );
+  // ریست کردن تمام داده‌های قبلی
+  persianNames = [];
+  englishNames = [];
+  linksList = [];
+  countryNames = [];
+  awaitingResponse = true;
+  isPaused = false;
+
+  bot.sendMessage(
+    chatId,
+    "ربات از اول شروع شد! لطفا ابتدا یک لیست از نام‌های فارسی ارسال کنید. هر نام باید در یک خط جدید باشد."
+  );
+});
+
+// مدیریت دستور `/pause`
+bot.onText(/\/pause/, (msg) => {
+  const chatId = msg.chat.id;
+  if (!isPaused) {
+    isPaused = true;
+    bot.sendMessage(chatId, "⏸️ ربات متوقف شد. برای ادامه از دستور /resume استفاده کنید.");
+  } else {
+    bot.sendMessage(chatId, "⏸️ ربات قبلاً متوقف شده است.");
+  }
+});
+
+// مدیریت دستور `/resume`
+bot.onText(/\/resume/, (msg) => {
+  const chatId = msg.chat.id;
+  if (isPaused) {
+    isPaused = false;
+    bot.sendMessage(chatId, "▶️ ربات فعال شد. می‌توانید ادامه دهید.");
+  } else {
+    bot.sendMessage(chatId, "▶️ ربات از قبل فعال است.");
   }
 });
 
 // دریافت اطلاعات موردنیاز به ترتیب
 bot.on("message", async (msg) => {
   const chatId = msg.chat.id;
+
+  if (isPaused) {
+    bot.sendMessage(chatId, "⏸️ ربات متوقف است. لطفاً با دستور /resume آن را فعال کنید.");
+    return;
+  }
 
   if (awaitingResponse && !msg.text.startsWith("/")) {
     // ذخیره لیست نام‌های فارسی
@@ -90,19 +118,12 @@ bot.on("message", async (msg) => {
             );
             const data = response.data;
 
-            const releaseYear =
-              data.Response === "True"
-                ? data.Year || "Unknown Year"
-                : "No Data";
+            const releaseYear = data.Response === "True" ? data.Year || "Unknown Year" : "No Data";
 
-            message += `✅ ${i + 1} ${persianNames[i]} (${releaseYear}) ${
-              countryNames[i]
-            } 👇 👇 👇\n⬇️ <a href="${linksList[i]}">${name}</a>\n\n`;
+            message += `✅ ${i + 1} ${persianNames[i]} (${releaseYear}) ${countryNames[i]} 👇 👇 👇\n⬇️ <a href="${linksList[i]}">${name}</a>\n\n`;
           } catch (error) {
             console.error(`Error fetching data for ${name}:`, error.message);
-            message += `❌ ${i + 1} ${
-              persianNames[i]
-            } - خطا در دریافت اطلاعات.\n\n`;
+            message += `❌ ${i + 1} ${persianNames[i]} - خطا در دریافت اطلاعات.\n\n`;
           }
         }
 
