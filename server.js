@@ -1,21 +1,27 @@
 const TelegramBot = require("node-telegram-bot-api");
 const axios = require("axios");
+const { Translate } = require("@google-cloud/translate").v2;
 
 // تنظیم توکن ربات تلگرام و ایجاد ربات
 const token = "8085649416:AAHI2L0h8ncv5zn4uaus4VrbRcF9btCcBTs";
 const bot = new TelegramBot(token, { polling: true });
 
+// تنظیم Google Translate API
+const translate = new Translate({ key: "YOUR_GOOGLE_API_KEY" }); // کلید API خود را اینجا وارد کنید
+
 // API Key برای OMDB
 const OMDB_API_KEY = "9c5e2fdd"; // اینجا API Key خود را وارد کنید
 
-// تابع برای گرفتن اموجی پرچم بر اساس نام کشور
-function getFlagEmoji(countryCode) {
-  const codePoints = countryCode
-    .toUpperCase()
-    .split("")
-    .map((char) => 0x1f1e6 + char.charCodeAt(0) - 65);
-  return String.fromCodePoint(...codePoints);
-}
+// تابع برای ترجمه نام کشور
+const translateCountry = async (country) => {
+  try {
+    const [translatedText] = await translate.translate(country, "fa");
+    return translatedText;
+  } catch (error) {
+    console.error(`Error translating country name: ${country}`, error.message);
+    return country; // بازگرداندن نام اصلی کشور در صورت بروز خطا
+  }
+};
 
 // متغیر برای ذخیره نام‌ها و لینک‌ها
 let persianNames = [];
@@ -23,10 +29,11 @@ let englishNames = [];
 let linksList = [];
 let awaitingResponse = false;
 
-// تابع برای تقسیم پیام‌های طولانی
-const sendLargeMessage = async (chatId, message, bot) => {
-  const chunks = message.match(/[\s\S]{1,4000}/g); // تقسیم به بخش‌های حداکثر 4000 کاراکتر
-  for (const chunk of chunks) {
+// تابع برای تقسیم پیام‌ها بر اساس تعداد خطوط
+const sendMessageInChunks = async (chatId, message, bot, linesPerChunk = 50) => {
+  const lines = message.split("\n");
+  for (let i = 0; i < lines.length; i += linesPerChunk) {
+    const chunk = lines.slice(i, i + linesPerChunk).join("\n");
     await bot.sendMessage(chatId, chunk, { parse_mode: "HTML" });
   }
 };
@@ -83,15 +90,16 @@ bot.on("message", async (msg) => {
             if (data.Response === "True") {
               const releaseYear = data.Year || "Unknown Year";
               const countries = data.Country
-                ? data.Country.split(", ")
-                : ["Unknown Country"];
-              const countriesEmojis = countries
-                .map((country) => getFlagEmoji(country))
-                .join(" ");
+                ? await Promise.all(
+                    data.Country.split(", ").map((country) =>
+                      translateCountry(country)
+                    )
+                  )
+                : ["کشور ناشناس"];
 
               message += `✅ ${i + 1} ${
                 persianNames[i]
-              } (${releaseYear}) ${countriesEmojis} 👇 👇 👇\n⬇️ <a href="${
+              } (${releaseYear}) ${countries.join(", ")} 👇 👇 👇\n⬇️ <a href="${
                 linksList[i]
               }">${name}</a>\n\n`;
             } else {
@@ -109,8 +117,8 @@ bot.on("message", async (msg) => {
           }
         }
 
-        // ارسال نتیجه به کاربر
-        await sendLargeMessage(chatId, message, bot);
+        // ارسال نتیجه به صورت تقسیم‌شده
+        await sendMessageInChunks(chatId, message, bot);
       } else {
         bot.sendMessage(
           chatId,
