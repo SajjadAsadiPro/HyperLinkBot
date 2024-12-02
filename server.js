@@ -1,80 +1,144 @@
-const { Telegraf } = require('telegraf');
-const ExcelJS = require('exceljs');
-const fetch = require('node-fetch');
+const TelegramBot = require("node-telegram-bot-api");
+const axios = require("axios");
+const XLSX = require("xlsx"); // برای خواندن فایل اکسل
 
-const bot = new Telegraf('8085649416:AAHI2L0h8ncv5zn4uaus4VrbRcF9btCcBTs');
+// تنظیم توکن ربات تلگرام و ایجاد ربات
+const token = "8085649416:AAHI2L0h8ncv5zn4uaus4VrbRcF9btCcBTs";
+const bot = new TelegramBot(token, { polling: true });
 
-// متغیر برای شمارش تعداد پردازش‌ها
-let processCount = 0;
+// API Key برای OMDB
+const OMDB_API_KEY = "9c5e2fdd"; // اینجا API Key خود را وارد کنید
 
-// دستور استارت برای ارسال پیام
-bot.start(async (ctx) => {
-  processCount++; // افزایش شمارنده
-  const startMessage = `🚀 ربات در حال اجراست. تعداد پردازش‌ها: ${processCount}`;
-  const message = await ctx.reply(startMessage); // ارسال پیام استارت
-  bot.context.startMessageId = message.message_id; // ذخیره ID پیام برای ویرایش در آینده
+// متغیرهای وضعیت ربات
+let isPaused = false;
+let persianNames = [];
+let englishNames = [];
+let linksList = [];
+let countryNames = [];
+let awaitingResponse = false;
+
+// تابع برای تقسیم پیام‌ها بر اساس تعداد خطوط
+const sendMessageInChunks = async (chatId, message, bot, linesPerChunk = 150) => {
+  const lines = message.split("\n");
+  for (let i = 0; i < lines.length; i += linesPerChunk) {
+    const chunk = lines.slice(i, i + linesPerChunk).join("\n");
+    await bot.sendMessage(chatId, chunk, { parse_mode: "HTML" });
+  }
+};
+
+// مدیریت دستور `/start`
+bot.onText(/\/start/, (msg) => {
+  const chatId = msg.chat.id;
+
+  // ریست کردن تمام داده‌های قبلی
+  persianNames = [];
+  englishNames = [];
+  linksList = [];
+  countryNames = [];
+  awaitingResponse = true;
+  isPaused = false;
+
+  bot.sendMessage(
+    chatId,
+    "ربات از اول شروع شد! لطفا ابتدا یک فایل اکسل ارسال کنید که شامل نام‌های فارسی، انگلیسی، لینک‌ها و کشورها باشد."
+  );
 });
 
-// زمانی که فایل دریافت می‌شود
-bot.on('document', async (ctx) => {
-  try {
-    const fileId = ctx.message.document.file_id;
-    const fileLink = await ctx.telegram.getFileLink(fileId);
-    const filePath = fileLink.href;
-    const response = await fetch(filePath);
-    const buffer = await response.buffer();
-
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(buffer);
-    const worksheet = workbook.worksheets[0];
-
-    const data = [];
-    worksheet.eachRow((row, rowIndex) => {
-      if (rowIndex > 1) {
-        const rowData = {
-          nameFarsi: row.getCell(1).value,
-          nameEnglish: row.getCell(2).value,
-          country: row.getCell(3).value,
-          year: row.getCell(4).value, // سال تولید
-          link: row.getCell(5).value, // لینک
-        };
-        data.push(rowData);
-      }
-    });
-
-    let message = '';
-    let counter = 1;
-
-    for (let row of data) {
-      // بررسی لینک و استفاده از آن
-      let linkText = row.link ? row.link : ''; // اگر لینک نباشد، لینک خالی
-      let linkMarkup = linkText ? `[${row.nameEnglish}](${linkText})` : row.nameEnglish; // اگر لینک باشد، هایپرلینک کنیم
-
-      // ساخت پیام با استفاده از فرمت دلخواه
-      message += `${counter}. ${row.nameFarsi} - ${row.country} ${row.year || ""} ⬇️⬇️⬇️\n`;
-      message += `${linkMarkup}\n\n`;
-      counter++;
-
-      // ارسال پیام پس از هر 40 فیلم
-      if (counter % 40 === 0) {
-        await ctx.reply(message);
-        message = ''; // پاک کردن پیام برای شروع پیام جدید
-      }
-    }
-
-    // ارسال پیام باقی‌مانده
-    if (message !== '') {
-      await ctx.reply(message);
-    }
-
-    // ویرایش پیام استارت
-    processCount++; // افزایش شمارنده
-    await ctx.telegram.editMessageText(ctx.chat.id, bot.context.startMessageId, null, `🚀 ربات در حال اجراست. تعداد پردازش‌ها: ${processCount}`);
-
-  } catch (error) {
-    console.error('خطا در پردازش فایل:', error);
-    ctx.reply('❌ خطایی در پردازش فایل رخ داد. لطفاً دوباره تلاش کنید.');
+// مدیریت دستور `/pause`
+bot.onText(/\/pause/, (msg) => {
+  const chatId = msg.chat.id;
+  if (!isPaused) {
+    isPaused = true;
+    bot.sendMessage(chatId, "⏸️ ربات متوقف شد. برای ادامه از دستور /resume استفاده کنید.");
+  } else {
+    bot.sendMessage(chatId, "⏸️ ربات قبلاً متوقف شده است.");
   }
 });
 
-bot.launch();
+// مدیریت دستور `/resume`
+bot.onText(/\/resume/, (msg) => {
+  const chatId = msg.chat.id;
+  if (isPaused) {
+    isPaused = false;
+    bot.sendMessage(chatId, "▶️ ربات فعال شد. می‌توانید ادامه دهید.");
+  } else {
+    bot.sendMessage(chatId, "▶️ ربات از قبل فعال است.");
+  }
+});
+
+// دریافت فایل اکسل
+bot.on("document", async (msg) => {
+  const chatId = msg.chat.id;
+  const fileId = msg.document.file_id;
+
+  if (isPaused) {
+    bot.sendMessage(chatId, "⏸️ ربات متوقف است. لطفاً با دستور /resume آن را فعال کنید.");
+    return;
+  }
+
+  try {
+    // دریافت فایل
+    const file = await bot.getFile(fileId);
+    const fileUrl = `https://api.telegram.org/file/bot${token}/${file.file_path}`;
+    const response = await axios.get(fileUrl, { responseType: "arraybuffer" });
+    
+    // خواندن فایل اکسل
+    const workbook = XLSX.read(response.data, { type: "buffer" });
+    const sheetName = workbook.SheetNames[0]; // اولین شیت
+    const sheet = workbook.Sheets[sheetName];
+
+    // استخراج داده‌ها از شیت اکسل
+    const data = XLSX.utils.sheet_to_json(sheet);
+
+    // فرض می‌کنیم فایل اکسل ستون‌های 'فارسی', 'انگلیسی', 'لینک' و 'کشور' دارد
+    persianNames = data.map((row) => row["فارسی"]);
+    englishNames = data.map((row) => row["انگلیسی"]);
+    linksList = data.map((row) => row["لینک"]);
+    countryNames = data.map((row) => row["کشور"]);
+
+    bot.sendMessage(chatId, "فایل اکسل با موفقیت بارگذاری شد. در حال پردازش اطلاعات...");
+
+    // حالا اطلاعات را پردازش و ارسال می‌کنیم
+    if (
+      persianNames.length === englishNames.length &&
+      englishNames.length === linksList.length &&
+      linksList.length === countryNames.length
+    ) {
+      let message = "";
+
+      for (let i = 0; i < englishNames.length; i++) {
+        const name = englishNames[i];
+        try {
+          const response = await axios.get(
+            `http://www.omdbapi.com/?t=${name}&apikey=${OMDB_API_KEY}`
+          );
+          const data = response.data;
+
+          const releaseYear = data.Response === "True" ? data.Year || "Unknown Year" : "No Data";
+
+          message += `😍 ${persianNames[i]} (${releaseYear}) ${countryNames[i]} 👇 👇 👇\n`;
+          message += `${linksList[i]}\n\n`; // لینک بدون پیش‌نمایش
+
+        } catch (error) {
+          console.error(`Error fetching data for ${name}:`, error.message);
+          message += `❌ ${persianNames[i]} - خطا در دریافت اطلاعات.\n\n`;
+        }
+      }
+
+      // اضافه کردن آیدی‌ها به انتهای پیام
+      message += "\n@GlobCinema\n@Filmoseriyalerooz_Bot";
+
+      // ارسال نتیجه به صورت تقسیم‌شده
+      await sendMessageInChunks(chatId, message, bot, 150); // هر پیام شامل 150 خط
+    } else {
+      bot.sendMessage(
+        chatId,
+        "تعداد نام‌های فارسی، انگلیسی، لینک‌ها و کشورها باید برابر باشد. لطفا دوباره امتحان کنید."
+      );
+    }
+    awaitingResponse = false; // پایان انتظار
+  } catch (error) {
+    console.error("Error processing the Excel file:", error);
+    bot.sendMessage(chatId, "❌ خطا در پردازش فایل اکسل.");
+  }
+});
