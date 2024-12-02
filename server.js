@@ -40,7 +40,7 @@ bot.onText(/\/start/, (msg) => {
 
   bot.sendMessage(
     chatId,
-    "ربات از اول شروع شد! لطفا ابتدا یک فایل اکسل ارسال کنید که شامل نام‌های فارسی، انگلیسی، لینک‌ها و کشورها باشد."
+    "ربات از اول شروع شد! لطفا ابتدا یک فایل اکسل ارسال کنید که شامل نام‌های فارسی، نام‌های انگلیسی، کشورها و لینک‌ها باشد."
   );
 });
 
@@ -90,11 +90,11 @@ bot.on("document", async (msg) => {
     // استخراج داده‌ها از شیت اکسل
     const data = XLSX.utils.sheet_to_json(sheet);
 
-    // فرض می‌کنیم فایل اکسل ستون‌های 'فارسی', 'انگلیسی', 'لینک' و 'کشور' دارد
-    persianNames = data.map((row) => row["فارسی"]);
-    englishNames = data.map((row) => row["انگلیسی"]);
-    linksList = data.map((row) => row["لینک"]);
-    countryNames = data.map((row) => row["کشور"]);
+    // فیلتر کردن داده‌ها و فقط گرفتن ستون‌های مورد نظر
+    persianNames = data.map((row) => row["نام فارسی"] || "");
+    englishNames = data.map((row) => row["نام انگلیسی"] || "");
+    linksList = data.map((row) => row["لینک در کانال"] || "");
+    countryNames = data.map((row) => row["کشور"] || "");
 
     bot.sendMessage(chatId, "فایل اکسل با موفقیت بارگذاری شد. در حال پردازش اطلاعات...");
 
@@ -105,8 +105,14 @@ bot.on("document", async (msg) => {
       linksList.length === countryNames.length
     ) {
       let message = "";
+      let count = 0;
 
       for (let i = 0; i < englishNames.length; i++) {
+        // بررسی فیلدهای خالی
+        if (!persianNames[i] || !englishNames[i] || !linksList[i] || !countryNames[i]) {
+          break; // اگر یکی از فیلدها خالی بود، پردازش متوقف می‌شود
+        }
+
         const name = englishNames[i];
         try {
           const response = await axios.get(
@@ -116,24 +122,27 @@ bot.on("document", async (msg) => {
 
           const releaseYear = data.Response === "True" ? data.Year || "Unknown Year" : "No Data";
 
-          message += `😍 ${persianNames[i]} (${releaseYear}) ${countryNames[i]} 👇 👇 👇\n`;
-          message += `${linksList[i]}\n\n`; // لینک بدون پیش‌نمایش
+          message += `😍 ${i + 1} - ${persianNames[i]} (${releaseYear}) ${countryNames[i]} 👇 👇 👇\n`;
+          message += `<a href="${linksList[i]}">${name}</a>\n\n`;
 
+          count++;
+
+          // اگر تعداد فیلم‌ها به 40 رسید، ارسال پیام و شروع پیام جدید
+          if (count === 40 || i === englishNames.length - 1) {
+            message += "\n@GlobCinema\n@Filmoseriyalerooz_Bot";
+            await sendMessageInChunks(chatId, message, bot, 150); // ارسال پیام
+            message = ""; // ریست کردن پیام
+            count = 0; // ریست کردن شمارنده
+          }
         } catch (error) {
           console.error(`Error fetching data for ${name}:`, error.message);
           message += `❌ ${persianNames[i]} - خطا در دریافت اطلاعات.\n\n`;
         }
       }
-
-      // اضافه کردن آیدی‌ها به انتهای پیام
-      message += "\n@GlobCinema\n@Filmoseriyalerooz_Bot";
-
-      // ارسال نتیجه به صورت تقسیم‌شده
-      await sendMessageInChunks(chatId, message, bot, 150); // هر پیام شامل 150 خط
     } else {
       bot.sendMessage(
         chatId,
-        "تعداد نام‌های فارسی، انگلیسی، لینک‌ها و کشورها باید برابر باشد. لطفا دوباره امتحان کنید."
+        "تعداد نام‌های فارسی، نام‌های انگلیسی، لینک‌ها و کشورها باید برابر باشد. لطفا دوباره امتحان کنید."
       );
     }
     awaitingResponse = false; // پایان انتظار
