@@ -122,8 +122,8 @@ bot.on("document", async (msg) => {
 
           const releaseYear = data.Response === "True" ? data.Year || "Unknown Year" : "No Data";
 
-          message += `😍 ${i + 1} - ${persianNames[i]} (${releaseYear}) ${countryNames[i]} 👇 👇 👇\n`;
-          message += `<a href="${linksList[i]}">${name}</a>\n\n`;
+          message += ` ${i + 1} -<b> ${persianNames[i]} </b> (${releaseYear}) ${countryNames[i]}  👇\n`;
+          message += `😍 <a href="${linksList[i]}">${name}</a>\n\n`;
 
           count++;
 
