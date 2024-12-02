@@ -46,9 +46,13 @@ bot.on('document', async (ctx) => {
     let counter = 1;
 
     for (let row of data) {
-      let linkText = row.link || 'لینک معتبر برای فیلم یافت نشد';
+      // بررسی لینک و استفاده از آن
+      let linkText = row.link ? row.link : ''; // اگر لینک نباشد، لینک خالی
+      let linkMarkup = linkText ? `[${row.nameEnglish}](${linkText})` : row.nameEnglish; // اگر لینک باشد، هایپرلینک کنیم
+
+      // ساخت پیام با استفاده از فرمت دلخواه
       message += `${counter}. ${row.nameFarsi} - ${row.country} ${row.year || ""} ⬇️⬇️⬇️\n`;
-      message += `[${row.nameEnglish}](${linkText})\n\n`;
+      message += `${linkMarkup}\n\n`;
       counter++;
 
       // ارسال پیام پس از هر 40 فیلم
