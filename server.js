@@ -3,7 +3,11 @@ const ExcelJS = require("exceljs");
 const fs = require("fs");
 const fetch = require("node-fetch"); // اطمینان از نصب این کتابخانه در پروژه
 
-const bot = new Telegraf("YOUR_BOT_API_KEY");
+const bot = new Telegraf("8085649416:AAHI2L0h8ncv5zn4uaus4VrbRcF9btCcBTs");
+
+bot.start((ctx) => {
+  ctx.reply("🚀 ربات در حال اجرا است. لطفا فایل اکسل را ارسال کنید.");
+});
 
 bot.on("document", async (ctx) => {
   try {
