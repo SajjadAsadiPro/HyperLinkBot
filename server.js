@@ -1,54 +1,55 @@
-const TelegramBot = require("node-telegram-bot-api");
-const fs = require("fs");
-const ExcelJS = require("exceljs");
+const { Telegraf } = require('telegraf');
+const ExcelJS = require('exceljs');
+const fs = require('fs');
 
-// تنظیم توکن ربات تلگرام و ایجاد ربات
-const token = "8085649416:AAHI2L0h8ncv5zn4uaus4VrbRcF9btCcBTs";
-const bot = new TelegramBot(token, { polling: true });
+const bot = new Telegraf('YOUR_BOT_API_KEY');
 
-// تابع برای پردازش داده‌ها از فایل Excel
-async function processExcelFile(filePath) {
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.readFile(filePath);
-  const worksheet = workbook.getWorksheet(1);  // فرض کنید داده‌ها در اولین شیت هستند
-  
-  let message = "";
-
-  // پردازش هر ردیف از داده‌ها
-  worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
-    if (rowNumber > 1) { // نادیده گرفتن ردیف اول (سرفصل‌ها)
-      const persianName = row.getCell(1).text; // نام فارسی
-      const englishName = row.getCell(2).text; // نام انگلیسی
-      const country = row.getCell(3).text; // کشور
-      const link = row.getCell(4).text; // لینک
-
-      message += `✅ ${persianName} (${englishName}) - ${country} 👇\n⬇️ <a href="${link}">${englishName}</a>\n\n`;
-    }
-  });
-
-  return message;
-}
-
-// هنگامی که ربات فایل اکسل را دریافت می‌کند
-bot.on('document', async (msg) => {
-  const chatId = msg.chat.id;
-  const fileId = msg.document.file_id;
-
+bot.on('document', async (ctx) => {
   try {
-    // دریافت فایل
-    const file = await bot.getFile(fileId);
-    const filePath = `https://api.telegram.org/file/bot${token}/${file.file_path}`;
+    const fileId = ctx.message.document.file_id;
+    const fileLink = await ctx.telegram.getFileLink(fileId);
 
-    // بارگذاری فایل و پردازش داده‌ها
-    const fileDownload = await fetch(filePath).then(res => res.buffer());
-    fs.writeFileSync("data.xlsx", fileDownload); // ذخیره فایل به صورت محلی
+    const filePath = fileLink.href;
+    const response = await fetch(filePath);
+    const buffer = await response.buffer();
 
-    const message = await processExcelFile("data.xlsx");
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer);
 
-    // ارسال پیام‌های پردازش شده
-    bot.sendMessage(chatId, message, { parse_mode: "HTML" });
+    const worksheet = workbook.worksheets[0]; // فرض می‌کنیم اولین ورک‌شیت را می‌خوانیم
+
+    const data = [];
+    worksheet.eachRow((row, rowIndex) => {
+      if (rowIndex > 1) { // skipping header row
+        const rowData = {
+          nameFarsi: row.getCell(1).value,
+          nameEnglish: row.getCell(2).value,
+          country: row.getCell(3).value,
+          link: row.getCell(4).value,
+        };
+        data.push(rowData);
+      }
+    });
+
+    if (data.length === 0) {
+      return ctx.reply('❌ داده‌ای برای پردازش پیدا نشد.');
+    }
+
+    // انجام عملیات‌های مختلف با داده‌ها (ایجاد هایپرلینک و ارسال پیام)
+    for (let row of data) {
+      try {
+        // فرض بر این است که عملیات‌هایپرلینک به طور صحیح انجام می‌شود
+        const message = `${row.nameFarsi} (${row.nameEnglish}) از کشور ${row.country} - [لینک]( ${row.link} )`;
+        await ctx.reply(message);
+      } catch (error) {
+        console.error('خطا در پردازش ردیف:', row, error);
+        ctx.reply('❌ خطایی در پردازش برخی داده‌ها رخ داد.');
+      }
+    }
   } catch (error) {
-    console.error("Error processing file:", error.message);
-    bot.sendMessage(chatId, "❌ خطایی در پردازش فایل رخ داد. لطفا دوباره تلاش کنید.");
+    console.error('خطای کل در پردازش فایل:', error);
+    ctx.reply('❌ خطایی در پردازش فایل رخ داد. لطفاً دوباره تلاش کنید.');
   }
 });
+
+bot.launch();
