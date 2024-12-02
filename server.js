@@ -22,7 +22,7 @@ const sendMessageInChunks = async (chatId, message, bot, linesPerChunk = 150) =>
   const lines = message.split("\n");
   for (let i = 0; i < lines.length; i += linesPerChunk) {
     const chunk = lines.slice(i, i + linesPerChunk).join("\n");
-    await bot.sendMessage(chatId, chunk, { parse_mode: "HTML" });
+    await bot.sendMessage(chatId, chunk, { parse_mode: "HTML", disable_web_page_preview: true });
   }
 };
 
