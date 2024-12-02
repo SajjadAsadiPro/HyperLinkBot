@@ -1,13 +1,16 @@
 const { Telegraf } = require("telegraf");
 const ExcelJS = require("exceljs");
-const fs = require("fs");
 const fetch = require("node-fetch"); // اطمینان از نصب این کتابخانه در پروژه
 
 const bot = new Telegraf("8085649416:AAHI2L0h8ncv5zn4uaus4VrbRcF9btCcBTs");
 
-bot.start((ctx) => {
-  ctx.reply("🚀 ربات در حال اجرا است. لطفا فایل اکسل را ارسال کنید.");
-});
+// تابع برای فرار دادن کاراکترهای خاص MarkdownV2
+function escapeMarkdownV2(text) {
+  if (typeof text !== "string") {
+    return text; // اگر داده از نوع رشته نبود، بدون تغییر بازگشت می‌دهد
+  }
+  return text.replace(/([\\`*_\[\](){}#+\-.!])/g, '\\$1');
+}
 
 bot.on("document", async (ctx) => {
   try {
@@ -36,7 +39,11 @@ bot.on("document", async (ctx) => {
           country: row.getCell(3).value,
           link: row.getCell(4).value,
         };
-        data.push(rowData);
+
+        // اگر فیلدها خالی باشند، ردیف را نادیده می‌گیریم
+        if (rowData.nameFarsi && rowData.nameEnglish && rowData.link) {
+          data.push(rowData);
+        }
       }
     });
 
@@ -46,14 +53,36 @@ bot.on("document", async (ctx) => {
       return ctx.reply("❌ داده‌ای برای پردازش پیدا نشد.");
     }
 
+    // ارسال نتایج در قالب مورد نظر
+    let messages = [];
+    let count = 1;
+
     for (let row of data) {
       try {
-        const message = `${row.nameFarsi} (${row.nameEnglish}) از کشور ${row.country} - [لینک]( ${row.link} )`;
-        await ctx.reply(message);
+        // تصحیح لینک: اطمینان از اینکه row.link یک رشته است
+        const link = String(row.link); 
+
+        const message = `
+${count}. ${row.nameFarsi} ${row.country} ${new Date().getFullYear()} ⬇️⬇️⬇️
+[${row.nameEnglish}](${link})`;
+
+        messages.push(message);
+        count++;
+
+        // اگر تعداد 40 پیام رسید، ارسال می‌کنیم و بعد از آن ادامه می‌دهیم
+        if (messages.length === 40) {
+          await ctx.reply(messages.join("\n\n"));
+          messages = []; // پاک کردن پیام‌ها برای ارسال بعدی
+        }
       } catch (error) {
         console.error("خطا در پردازش ردیف:", row, error);
         ctx.reply("❌ خطایی در پردازش برخی داده‌ها رخ داد.");
       }
+    }
+
+    // ارسال پیام‌های باقی‌مانده
+    if (messages.length > 0) {
+      await ctx.reply(messages.join("\n\n"));
     }
   } catch (error) {
     console.error("خطای کل در پردازش فایل:", error);
