@@ -1,83 +1,54 @@
-// دریافت فایل اکسل از کاربر
-bot.on("document", async (msg) => {
+const TelegramBot = require("node-telegram-bot-api");
+const fs = require("fs");
+const ExcelJS = require("exceljs");
+
+// تنظیم توکن ربات تلگرام و ایجاد ربات
+const token = "8085649416:AAHI2L0h8ncv5zn4uaus4VrbRcF9btCcBTs";
+const bot = new TelegramBot(token, { polling: true });
+
+// تابع برای پردازش داده‌ها از فایل Excel
+async function processExcelFile(filePath) {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(filePath);
+  const worksheet = workbook.getWorksheet(1);  // فرض کنید داده‌ها در اولین شیت هستند
+  
+  let message = "";
+
+  // پردازش هر ردیف از داده‌ها
+  worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+    if (rowNumber > 1) { // نادیده گرفتن ردیف اول (سرفصل‌ها)
+      const persianName = row.getCell(1).text; // نام فارسی
+      const englishName = row.getCell(2).text; // نام انگلیسی
+      const country = row.getCell(3).text; // کشور
+      const link = row.getCell(4).text; // لینک
+
+      message += `✅ ${persianName} (${englishName}) - ${country} 👇\n⬇️ <a href="${link}">${englishName}</a>\n\n`;
+    }
+  });
+
+  return message;
+}
+
+// هنگامی که ربات فایل اکسل را دریافت می‌کند
+bot.on('document', async (msg) => {
   const chatId = msg.chat.id;
   const fileId = msg.document.file_id;
 
-  if (isPaused) {
-    bot.sendMessage(chatId, "⏸️ ربات متوقف است. لطفاً با دستور /resume آن را فعال کنید.");
-    return;
-  }
-
   try {
-    // دانلود فایل اکسل
-    console.log("در حال دانلود فایل از تلگرام...");
+    // دریافت فایل
     const file = await bot.getFile(fileId);
     const filePath = `https://api.telegram.org/file/bot${token}/${file.file_path}`;
-    const fileResponse = await axios.get(filePath, { responseType: "arraybuffer" });
-    
-    // ذخیره فایل اکسل به صورت موقت
-    const fileName = `temp_${file.document.file_name}`;
-    fs.writeFileSync(fileName, fileResponse.data);
-    console.log("فایل اکسل دانلود شد و ذخیره گردید.");
 
-    // خواندن داده‌ها از فایل اکسل
-    const workbook = xlsx.readFile(fileName);
-    const sheet = workbook.Sheets[workbook.SheetNames[0]]; // فرض می‌کنیم اطلاعات در اولین شیت هستند
-    const jsonData = xlsx.utils.sheet_to_json(sheet);
+    // بارگذاری فایل و پردازش داده‌ها
+    const fileDownload = await fetch(filePath).then(res => res.buffer());
+    fs.writeFileSync("data.xlsx", fileDownload); // ذخیره فایل به صورت محلی
 
-    if (!jsonData || jsonData.length === 0) {
-      throw new Error("داده‌های موجود در فایل اکسل خالی است یا به درستی استخراج نشده‌اند.");
-    }
+    const message = await processExcelFile("data.xlsx");
 
-    console.log("داده‌ها از فایل اکسل خوانده شدند.");
-
-    // استخراج داده‌ها از JSON
-    const persianNames = [];
-    const englishNames = [];
-    const linksList = [];
-    const countryNames = [];
-
-    // فرض می‌کنیم سرتیترهای شما به این شکل باشند:
-    const columns = {
-      persian: "نام فارسی",
-      english: "نام انگلیسی",
-      link: "لینک در کانال",
-      country: "کشور"
-    };
-
-    jsonData.forEach((row) => {
-      persianNames.push(row[columns.persian]);
-      englishNames.push(row[columns.english]);
-      linksList.push(row[columns.link]);
-      countryNames.push(row[columns.country]);
-    });
-
-    // ارسال اطلاعات به کاربر
-    let message = "";
-    for (let i = 0; i < englishNames.length; i++) {
-      const name = englishNames[i];
-      try {
-        const response = await axios.get(
-          `http://www.omdbapi.com/?t=${name}&apikey=${OMDB_API_KEY}`
-        );
-        const data = response.data;
-
-        const releaseYear = data.Response === "True" ? data.Year || "Unknown Year" : "No Data";
-
-        message += `✅ ${i + 1} ${persianNames[i]} (${releaseYear}) ${countryNames[i]} 👇 👇 👇\n⬇️ <a href="${linksList[i]}">${name}</a>\n\n`;
-      } catch (error) {
-        console.error(`Error fetching data for ${name}:`, error.message);
-        message += `❌ ${i + 1} ${persianNames[i]} - خطا در دریافت اطلاعات.\n\n`;
-      }
-    }
-
-    // ارسال نتیجه به صورت تقسیم‌شده
-    await sendMessageInChunks(chatId, message, bot, 150); // هر پیام شامل 150 خط
-
-    // حذف فایل موقت بعد از استفاده
-    fs.unlinkSync(fileName);
+    // ارسال پیام‌های پردازش شده
+    bot.sendMessage(chatId, message, { parse_mode: "HTML" });
   } catch (error) {
     console.error("Error processing file:", error.message);
-    bot.sendMessage(chatId, `❌ خطایی در پردازش فایل رخ داد: ${error.message}. لطفا دوباره تلاش کنید.`);
+    bot.sendMessage(chatId, "❌ خطایی در پردازش فایل رخ داد. لطفا دوباره تلاش کنید.");
   }
 });
