@@ -17,7 +17,7 @@ let countryNames = [];
 let awaitingResponse = false;
 
 // تابع برای تقسیم پیام‌ها بر اساس تعداد خطوط
-const sendMessageInChunks = async (chatId, message, bot, linesPerChunk = 50) => {
+const sendMessageInChunks = async (chatId, message, bot, linesPerChunk = 150) => {
   const lines = message.split("\n");
   for (let i = 0; i < lines.length; i += linesPerChunk) {
     const chunk = lines.slice(i, i + linesPerChunk).join("\n");
@@ -128,7 +128,7 @@ bot.on("message", async (msg) => {
         }
 
         // ارسال نتیجه به صورت تقسیم‌شده
-        await sendMessageInChunks(chatId, message, bot);
+        await sendMessageInChunks(chatId, message, bot, 150); // هر پیام شامل 150 خط
       } else {
         bot.sendMessage(
           chatId,

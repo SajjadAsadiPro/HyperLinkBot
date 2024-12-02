@@ -10,7 +10,8 @@
     "@google-cloud/translate": "^8.5.0",
     "axios": "^1.7.8",
     "express": "^4.17.1",
-    "node-telegram-bot-api": "^0.66.0"
+    "node-telegram-bot-api": "^0.66.0",
+    "xlsx": "^0.18.5"
   },
   "engines": {
     "node": "14.x"
