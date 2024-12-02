@@ -23,6 +23,14 @@ let englishNames = [];
 let linksList = [];
 let awaitingResponse = false;
 
+// تابع برای تقسیم پیام‌های طولانی
+const sendLargeMessage = async (chatId, message, bot) => {
+  const chunks = message.match(/[\s\S]{1,4000}/g); // تقسیم به بخش‌های حداکثر 4000 کاراکتر
+  for (const chunk of chunks) {
+    await bot.sendMessage(chatId, chunk, { parse_mode: "HTML" });
+  }
+};
+
 // هنگامی که ربات شروع می‌شود، از کاربر می‌خواهد نام‌ها را وارد کند
 bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
@@ -64,41 +72,45 @@ bot.on("message", async (msg) => {
       if (englishNames.length === linksList.length) {
         let message = "";
 
-        let promises = englishNames.map(async (name, i) => {
-          let response = await axios.get(
-            `http://www.omdbapi.com/?t=${name}&apikey=${OMDB_API_KEY}`
-          );
-          let data = response.data;
+        for (let i = 0; i < englishNames.length; i++) {
+          const name = englishNames[i];
+          try {
+            const response = await axios.get(
+              `http://www.omdbapi.com/?t=${name}&apikey=${OMDB_API_KEY}`
+            );
+            const data = response.data;
 
-          // اگر اطلاعات پیدا شد
-          if (data.Response === "True") {
-            const releaseYear = data.Year || "Unknown Year";
-            const countries = data.Country
-              ? data.Country.split(", ")
-              : ["Unknown Country"];
-            const countriesEmojis = countries
-              .map((country) => getFlagEmoji(country))
-              .join(" ");
+            if (data.Response === "True") {
+              const releaseYear = data.Year || "Unknown Year";
+              const countries = data.Country
+                ? data.Country.split(", ")
+                : ["Unknown Country"];
+              const countriesEmojis = countries
+                .map((country) => getFlagEmoji(country))
+                .join(" ");
 
-            // ساخت فرمت خروجی
-            message += `✅ ${i + 1} ${
+              message += `✅ ${i + 1} ${
+                persianNames[i]
+              } (${releaseYear}) ${countriesEmojis} 👇 👇 👇\n⬇️ <a href="${
+                linksList[i]
+              }">${name}</a>\n\n`;
+            } else {
+              message += `✅ ${i + 1} ${
+                persianNames[i]
+              } (No Data) 👇 👇 👇\n⬇️ <a href="${
+                linksList[i]
+              }">${name}</a>\n\n`;
+            }
+          } catch (error) {
+            console.error(`Error fetching data for ${name}:`, error.message);
+            message += `❌ ${i + 1} ${
               persianNames[i]
-            } (${releaseYear}) ${countriesEmojis} 👇 👇 👇\n⬇️ <a href="${
-              linksList[i]
-            }">${name}</a>\n\n`;
-          } else {
-            // اگر اطلاعات پیدا نشد
-            message += `✅ ${i + 1} ${
-              persianNames[i]
-            } (No Data) 👇 👇 👇\n⬇️ <a href="${linksList[i]}">${name}</a>\n\n`;
+            } - خطا در دریافت اطلاعات.\n\n`;
           }
-        });
-
-        // منتظر می‌مانیم تا همه درخواست‌ها تکمیل شوند
-        await Promise.all(promises);
+        }
 
         // ارسال نتیجه به کاربر
-        bot.sendMessage(chatId, message, { parse_mode: "HTML" });
+        await sendLargeMessage(chatId, message, bot);
       } else {
         bot.sendMessage(
           chatId,
