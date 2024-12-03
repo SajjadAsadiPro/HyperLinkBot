@@ -1,6 +1,7 @@
 const TelegramBot = require("node-telegram-bot-api");
 const axios = require("axios");
 const XLSX = require("xlsx"); // برای خواندن فایل اکسل
+const fs = require("fs"); // برای ذخیره‌سازی وضعیت پردازش
 
 // تنظیم توکن ربات تلگرام و ایجاد ربات
 const token = "8085649416:AAHI2L0h8ncv5zn4uaus4VrbRcF9btCcBTs"; // توکن ربات خود را جایگزین کنید
@@ -14,6 +15,24 @@ let linksList = [];
 let countryNames = [];
 let productionYears = [];
 let awaitingResponse = false;
+
+// مسیر فایل ذخیره وضعیت پردازش
+const progressFilePath = './progress.json'; // مسیر فایل برای ذخیره وضعیت پردازش
+
+// تابع برای خواندن وضعیت پردازش قبلی
+const readProgress = () => {
+  if (fs.existsSync(progressFilePath)) {
+    const data = fs.readFileSync(progressFilePath);
+    return JSON.parse(data);
+  }
+  return { lastProcessedIndex: -1 }; // اگر فایل وجود ندارد، مقدار اولیه -1 برمی‌گردانیم
+};
+
+// تابع برای ذخیره وضعیت پردازش
+const saveProgress = (lastIndex) => {
+  const progress = { lastProcessedIndex: lastIndex };
+  fs.writeFileSync(progressFilePath, JSON.stringify(progress));
+};
 
 // مدیریت دستور `/start`
 bot.onText(/\/start/, (msg) => {
@@ -32,31 +51,6 @@ bot.onText(/\/start/, (msg) => {
     chatId,
     "ربات از اول شروع شد! لطفا ابتدا یک فایل اکسل ارسال کنید که شامل نام‌های فارسی، نام‌های انگلیسی، سال تولید، کشورها و لینک‌ها باشد."
   );
-});
-
-// مدیریت دستور `/pause`
-bot.onText(/\/pause/, (msg) => {
-  const chatId = msg.chat.id;
-  if (!isPaused) {
-    isPaused = true;
-    bot.sendMessage(
-      chatId,
-      "⏸️ ربات متوقف شد. برای ادامه از دستور /resume استفاده کنید."
-    );
-  } else {
-    bot.sendMessage(chatId, "⏸️ ربات قبلاً متوقف شده است.");
-  }
-});
-
-// مدیریت دستور `/resume`
-bot.onText(/\/resume/, (msg) => {
-  const chatId = msg.chat.id;
-  if (isPaused) {
-    isPaused = false;
-    bot.sendMessage(chatId, "▶️ ربات فعال شد. می‌توانید ادامه دهید.");
-  } else {
-    bot.sendMessage(chatId, "▶️ ربات از قبل فعال است.");
-  }
 });
 
 // دریافت فایل اکسل
@@ -95,11 +89,18 @@ bot.on("document", async (msg) => {
 
     bot.sendMessage(
       chatId,
-      "فایل اکسل با موفقیت بارگذاری شد. در حال ارسال اطلاعات..."
+      "فایل اکسل با موفقیت بارگذاری شد. در حال پردازش اطلاعات..."
     );
 
-    // ارسال پیام برای هر فیلم
-    for (let i = 0; i < englishNames.length; i++) {
+    // دریافت آخرین رکورد پردازش‌شده
+    const progress = readProgress();
+    const lastProcessedIndex = progress.lastProcessedIndex;
+
+    let message = ""; // پیام اصلی
+    let maxMessageLength = 3800; // محدودیت تلگرام
+    let count = 0;
+
+    for (let i = lastProcessedIndex + 1; i < englishNames.length; i++) {
       // بررسی فیلدهای خالی
       if (
         !persianNames[i] ||
@@ -110,21 +111,45 @@ bot.on("document", async (msg) => {
         continue; // اگر یکی از فیلدها خالی بود، از آن صرف‌نظر کنید
       }
 
-      // ساخت پیام
-      const message = `${i + 1} - <b>${persianNames[i]}</b> (${
+      // ساخت متن هر رکورد
+      const filmMessage = `${i + 1} - <b>${persianNames[i]}</b> (${
         productionYears[i]
-      }) ${countryNames[i]}  👇\n` +
-      `😍 <a href="${linksList[i]}">"${englishNames[i]}"</a>\n\n` +
-      `@GlobCinema\n@Filmoseriyalerooz_Bot`;
+      }) ${countryNames[i]}  👇\n😍 <a href="${linksList[i]}">"${
+        englishNames[i]
+      }"</a>\n\n`;
 
-      // ارسال پیام
+      // اگر اضافه کردن این رکورد پیام را از 3800 کاراکتر فراتر ببرد
+      if (message.length + filmMessage.length > maxMessageLength) {
+        await bot.sendMessage(chatId, message, {
+          parse_mode: "HTML",
+          disable_web_page_preview: true,
+        });
+        message = ""; // ریست کردن پیام
+      }
+
+      // اضافه کردن رکورد به پیام
+      message += filmMessage;
+      count++;
+
+      // ذخیره‌سازی وضعیت پردازش
+      if (count === 30 || i === englishNames.length - 1) {
+        await bot.sendMessage(chatId, message, {
+          parse_mode: "HTML",
+          disable_web_page_preview: true,
+        });
+        message = ""; // ریست کردن پیام
+        saveProgress(i); // ذخیره شماره آخرین رکورد پردازش شده
+      }
+    }
+
+    // ارسال پیام باقی‌مانده
+    if (message.trim().length > 0) {
+      message += "\n@GlobCinema\n@Filmoseriyalerooz_Bot";
       await bot.sendMessage(chatId, message, {
         parse_mode: "HTML",
         disable_web_page_preview: true,
       });
     }
-
-    bot.sendMessage(chatId, "✅ تمام اطلاعات ارسال شد.");
   } catch (error) {
     console.error("Error processing the Excel file:", error);
     bot.sendMessage(chatId, "❌ خطا در پردازش فایل اکسل.");
