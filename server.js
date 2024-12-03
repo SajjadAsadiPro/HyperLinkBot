@@ -3,68 +3,78 @@ const axios = require("axios");
 const XLSX = require("xlsx");
 const fs = require("fs");
 
-// تنظیم توکن ربات تلگرام و ایجاد ربات
-const token = "8085649416:AAHI2L0h8ncv5zn4uaus4VrbRcF9btCcBTs"; // توکن ربات خود را در اینجا قرار دهید
+const token = "8085649416:AAHI2L0h8ncv5zn4uaus4VrbRcF9btCcBTs";
 const bot = new TelegramBot(token, { polling: true });
 
-// متغیرهای وضعیت ربات
-let isPaused = false;
+const progressFilePath = "./progress.json"; // فایل ذخیره‌سازی وضعیت
+
+// متغیرهای وضعیت
 let persianNames = [];
 let englishNames = [];
 let linksList = [];
 let countryNames = [];
 let productionYears = [];
-let awaitingResponse = false;
+let lastProcessedIndex = 0; // ذخیره آخرین پردازش‌شده
 
-// مسیر فایل ذخیره وضعیت پردازش
-const progressFilePath = './progress.json';
-
-// تابع برای خواندن وضعیت پردازش قبلی
-const readProgress = () => {
-  if (fs.existsSync(progressFilePath)) {
-    const data = fs.readFileSync(progressFilePath);
-    return JSON.parse(data);
+// تابع برای تقسیم پیام‌ها به بخش‌های کوچکتر
+const sendMessageInChunks = async (chatId, message, bot, linesPerChunk = 150) => {
+  const lines = message.split("\n");
+  for (let i = 0; i < lines.length; i += linesPerChunk) {
+    const chunk = lines.slice(i, i + linesPerChunk).join("\n");
+    await bot.sendMessage(chatId, chunk, {
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+    });
   }
-  return { lastProcessedIndex: -1 }; // مقدار پیش‌فرض -1 یعنی هیچ رکوردی پردازش نشده
 };
 
-// تابع برای ذخیره وضعیت پردازش
-const saveProgress = (lastIndex) => {
-  const progress = { lastProcessedIndex: lastIndex };
-  fs.writeFileSync(progressFilePath, JSON.stringify(progress));
-};
-
-// مدیریت دستور `/start`
+// مدیریت دستور /start
 bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
+  bot.sendMessage(
+    chatId,
+    "ربات آماده است. لطفاً فایل اکسل حاوی اطلاعات فیلم را ارسال کنید."
+  );
+});
 
-  // ریست کردن تمام داده‌های قبلی
+// مدیریت دستور /pause
+bot.onText(/\/pause/, (msg) => {
+  const chatId = msg.chat.id;
+  bot.sendMessage(chatId, "⏸️ ربات متوقف شد.");
+});
+
+// مدیریت دستور /resume
+bot.onText(/\/resume/, (msg) => {
+  const chatId = msg.chat.id;
+  bot.sendMessage(chatId, "▶️ ربات فعال شد. می‌توانید ادامه دهید.");
+});
+
+// دستور ریست کردن حافظه ربات
+bot.onText(/\/reset/, (msg) => {
+  const chatId = msg.chat.id;
+  // حذف فایل ذخیره‌سازی وضعیت پردازش (یعنی progress.json)
+  if (fs.existsSync(progressFilePath)) {
+    fs.unlinkSync(progressFilePath); // حذف فایل
+    bot.sendMessage(chatId, "🔄 حافظه ربات ریست شد. تمامی اطلاعات پردازش شده پاک شد.");
+  } else {
+    bot.sendMessage(chatId, "❌ هیچ اطلاعات پردازش شده‌ای پیدا نشد.");
+  }
+
+  // ریست کردن تمام متغیرهای مربوط به داده‌ها
   persianNames = [];
   englishNames = [];
   linksList = [];
   countryNames = [];
   productionYears = [];
-  awaitingResponse = true;
-  isPaused = false;
+  lastProcessedIndex = 0;
 
-  bot.sendMessage(
-    chatId,
-    "ربات از اول شروع شد! لطفا ابتدا یک فایل اکسل ارسال کنید که شامل نام‌های فارسی، نام‌های انگلیسی، سال تولید، کشورها و لینک‌ها باشد."
-  );
+  bot.sendMessage(chatId, "🔄 حافظه ربات به تنظیمات کارخانه بازگشت.");
 });
 
 // دریافت فایل اکسل
 bot.on("document", async (msg) => {
   const chatId = msg.chat.id;
   const fileId = msg.document.file_id;
-
-  if (isPaused) {
-    bot.sendMessage(
-      chatId,
-      "⏸️ ربات متوقف است. لطفاً با دستور /resume آن را فعال کنید."
-    );
-    return;
-  }
 
   try {
     // دریافت فایل
@@ -74,11 +84,17 @@ bot.on("document", async (msg) => {
 
     // خواندن فایل اکسل
     const workbook = XLSX.read(response.data, { type: "buffer" });
-    const sheetName = workbook.SheetNames[0]; // اولین شیت
+    const sheetName = workbook.SheetNames[0];
     const sheet = workbook.Sheets[sheetName];
 
     // استخراج داده‌ها از شیت اکسل
     const data = XLSX.utils.sheet_to_json(sheet);
+
+    // اگر فایل قبلاً پردازش شده، از آخرین رکورد پردازش شده ادامه می‌دهیم
+    if (fs.existsSync(progressFilePath)) {
+      const progressData = JSON.parse(fs.readFileSync(progressFilePath, "utf-8"));
+      lastProcessedIndex = progressData.lastProcessedIndex || 0;
+    }
 
     // فیلتر کردن داده‌ها و فقط گرفتن ستون‌های مورد نظر
     persianNames = data.map((row) => row["نام فارسی"] || "");
@@ -92,18 +108,10 @@ bot.on("document", async (msg) => {
       "فایل اکسل با موفقیت بارگذاری شد. در حال پردازش اطلاعات..."
     );
 
-    // دریافت آخرین رکورد پردازش‌شده
-    const progress = readProgress();
-    let lastProcessedIndex = progress.lastProcessedIndex;
-
-    console.log("Last processed index:", lastProcessedIndex);
-
-    // ساخت پیام خروجی
     let message = "";
-    let maxMessageLength = 3800;
     let count = 0;
-
-    for (let i = lastProcessedIndex + 1; i < persianNames.length; i++) {
+    // پردازش از آخرین رکورد پردازش شده
+    for (let i = lastProcessedIndex; i < englishNames.length; i++) {
       // بررسی فیلدهای خالی
       if (
         !persianNames[i] ||
@@ -115,22 +123,27 @@ bot.on("document", async (msg) => {
       }
 
       // ساخت پیام
-      message += `${i + 1} - <b>${persianNames[i]}</b> (${productionYears[i]}) ${countryNames[i]}  👇\n`;
+      message += `${i + 1} - <b>${persianNames[i]}</b> (${
+        productionYears[i]
+      }) ${countryNames[i]}  👇\n`;
       message += `😍 <a href="${linksList[i]}">"${englishNames[i]}"</a>\n\n`;
 
       count++;
 
-      // بررسی محدودیت طول پیام
-      if (message.length >= maxMessageLength || i === persianNames.length - 1) {
+      // اگر تعداد فیلم‌ها به 30 رسید، ارسال پیام و شروع پیام جدید
+      if (count === 30 || i === englishNames.length - 1) {
         message += "\n@GlobCinema\n@Filmoseriyalerooz_Bot";
-        await bot.sendMessage(chatId, message, { parse_mode: "HTML" });
+        await sendMessageInChunks(chatId, message, bot, 150); // ارسال پیام
         message = ""; // ریست کردن پیام
-        saveProgress(i); // ذخیره آخرین ایندکس پردازش‌شده
+        count = 0; // ریست کردن شمارنده
       }
+
+      // ذخیره وضعیت پردازش برای ادامه در دفعات بعدی
+      lastProcessedIndex = i + 1; // رکورد بعدی را برای پردازش در دفعات بعدی ذخیره می‌کنیم
+      fs.writeFileSync(progressFilePath, JSON.stringify({ lastProcessedIndex }));
     }
 
-    bot.sendMessage(chatId, "✅ پردازش فایل به پایان رسید.");
-
+    bot.sendMessage(chatId, "✅ پردازش فایل تکمیل شد.");
   } catch (error) {
     console.error("Error processing the Excel file:", error);
     bot.sendMessage(chatId, "❌ خطا در پردازش فایل اکسل.");
