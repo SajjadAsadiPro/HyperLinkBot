@@ -15,12 +15,16 @@ let countryNames = [];
 let productionYears = [];
 let awaitingResponse = false;
 
-// تابع برای تقسیم پیام‌ها بر اساس تعداد خطوط
-const sendMessageInChunks = async (chatId, message, bot, linesPerChunk = 150) => {
-  const lines = message.split("\n");
-  for (let i = 0; i < lines.length; i += linesPerChunk) {
-    const chunk = lines.slice(i, i + linesPerChunk).join("\n");
-    await bot.sendMessage(chatId, chunk, { parse_mode: "HTML", disable_web_page_preview: true });
+// تابع ارسال پیام در قطعات کوچک
+const sendMessageInChunks = async (chatId, message, bot) => {
+  const maxChars = 4096; // حداکثر تعداد کاراکتر مجاز در تلگرام
+  while (message.length > 0) {
+    const chunk = message.slice(0, maxChars); // تقسیم پیام به بخش‌های کوچک
+    await bot.sendMessage(chatId, chunk, {
+      parse_mode: "HTML",
+      disable_web_page_preview: true,
+    });
+    message = message.slice(maxChars); // ادامه پیام
   }
 };
 
@@ -48,7 +52,10 @@ bot.onText(/\/pause/, (msg) => {
   const chatId = msg.chat.id;
   if (!isPaused) {
     isPaused = true;
-    bot.sendMessage(chatId, "⏸️ ربات متوقف شد. برای ادامه از دستور /resume استفاده کنید.");
+    bot.sendMessage(
+      chatId,
+      "⏸️ ربات متوقف شد. برای ادامه از دستور /resume استفاده کنید."
+    );
   } else {
     bot.sendMessage(chatId, "⏸️ ربات قبلاً متوقف شده است.");
   }
@@ -71,7 +78,10 @@ bot.on("document", async (msg) => {
   const fileId = msg.document.file_id;
 
   if (isPaused) {
-    bot.sendMessage(chatId, "⏸️ ربات متوقف است. لطفاً با دستور /resume آن را فعال کنید.");
+    bot.sendMessage(
+      chatId,
+      "⏸️ ربات متوقف است. لطفاً با دستور /resume آن را فعال کنید."
+    );
     return;
   }
 
@@ -96,7 +106,10 @@ bot.on("document", async (msg) => {
     countryNames = data.map((row) => row["کشور"] || "");
     productionYears = data.map((row) => row["سال تولید"] || "بدون اطلاعات");
 
-    bot.sendMessage(chatId, "فایل اکسل با موفقیت بارگذاری شد. در حال پردازش اطلاعات...");
+    bot.sendMessage(
+      chatId,
+      "فایل اکسل با موفقیت بارگذاری شد. در حال پردازش اطلاعات..."
+    );
 
     // حالا اطلاعات را پردازش و ارسال می‌کنیم
     if (
@@ -106,26 +119,29 @@ bot.on("document", async (msg) => {
       countryNames.length === productionYears.length
     ) {
       let message = "";
-      let count = 0;
 
       for (let i = 0; i < englishNames.length; i++) {
         // بررسی فیلدهای خالی
-        if (!persianNames[i] || !englishNames[i] || !linksList[i] || !countryNames[i]) {
+        if (
+          !persianNames[i] ||
+          !englishNames[i] ||
+          !linksList[i] ||
+          !countryNames[i]
+        ) {
           continue; // اگر یکی از فیلدها خالی بود، از آن صرف‌نظر کنید
         }
 
         // ساخت پیام
-        message += `${i + 1} - <b>${persianNames[i]}</b> (${productionYears[i]}) ${countryNames[i]} 👇 👇 👇\n`;
+        message += `${i + 1} - <b>${persianNames[i]}</b> (${
+          productionYears[i]
+        }) ${countryNames[i]}  👇\n`;
         message += `😍 <a href="${linksList[i]}">"${englishNames[i]}"</a>\n\n`;
 
-        count++;
-
-        // اگر تعداد فیلم‌ها به 40 رسید، ارسال پیام و شروع پیام جدید
-        if (count === 40 || i === englishNames.length - 1) {
+        // ارسال پیام در صورت نزدیک شدن به حداکثر کاراکتر یا پایان لیست
+        if (message.length > 3500 || i === englishNames.length - 1) {
           message += "\n@GlobCinema\n@Filmoseriyalerooz_Bot";
-          await sendMessageInChunks(chatId, message, bot, 150); // ارسال پیام
+          await sendMessageInChunks(chatId, message, bot); // ارسال پیام
           message = ""; // ریست کردن پیام
-          count = 0; // ریست کردن شمارنده
         }
       }
     } else {
