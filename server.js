@@ -1,10 +1,10 @@
 const TelegramBot = require("node-telegram-bot-api");
 const axios = require("axios");
-const XLSX = require("xlsx"); // برای خواندن فایل اکسل
-const fs = require("fs"); // برای ذخیره‌سازی وضعیت پردازش
+const XLSX = require("xlsx");
+const fs = require("fs");
 
 // تنظیم توکن ربات تلگرام و ایجاد ربات
-const token = "8085649416:AAHI2L0h8ncv5zn4uaus4VrbRcF9btCcBTs"; // توکن ربات خود را جایگزین کنید
+const token = "8085649416:AAHI2L0h8ncv5zn4uaus4VrbRcF9btCcBTs"; // توکن ربات خود را در اینجا قرار دهید
 const bot = new TelegramBot(token, { polling: true });
 
 // متغیرهای وضعیت ربات
@@ -17,7 +17,7 @@ let productionYears = [];
 let awaitingResponse = false;
 
 // مسیر فایل ذخیره وضعیت پردازش
-const progressFilePath = './progress.json'; // مسیر فایل برای ذخیره وضعیت پردازش
+const progressFilePath = './progress.json';
 
 // تابع برای خواندن وضعیت پردازش قبلی
 const readProgress = () => {
@@ -25,7 +25,7 @@ const readProgress = () => {
     const data = fs.readFileSync(progressFilePath);
     return JSON.parse(data);
   }
-  return { lastProcessedIndex: -1 }; // اگر فایل وجود ندارد، مقدار اولیه -1 برمی‌گردانیم
+  return { lastProcessedIndex: -1 }; // مقدار پیش‌فرض -1 یعنی هیچ رکوردی پردازش نشده
 };
 
 // تابع برای ذخیره وضعیت پردازش
@@ -94,13 +94,16 @@ bot.on("document", async (msg) => {
 
     // دریافت آخرین رکورد پردازش‌شده
     const progress = readProgress();
-    const lastProcessedIndex = progress.lastProcessedIndex;
+    let lastProcessedIndex = progress.lastProcessedIndex;
 
-    let message = ""; // پیام اصلی
-    let maxMessageLength = 3800; // محدودیت تلگرام
+    console.log("Last processed index:", lastProcessedIndex);
+
+    // ساخت پیام خروجی
+    let message = "";
+    let maxMessageLength = 3800;
     let count = 0;
 
-    for (let i = lastProcessedIndex + 1; i < englishNames.length; i++) {
+    for (let i = lastProcessedIndex + 1; i < persianNames.length; i++) {
       // بررسی فیلدهای خالی
       if (
         !persianNames[i] ||
@@ -111,45 +114,23 @@ bot.on("document", async (msg) => {
         continue; // اگر یکی از فیلدها خالی بود، از آن صرف‌نظر کنید
       }
 
-      // ساخت متن هر رکورد
-      const filmMessage = `${i + 1} - <b>${persianNames[i]}</b> (${
-        productionYears[i]
-      }) ${countryNames[i]}  👇\n😍 <a href="${linksList[i]}">"${
-        englishNames[i]
-      }"</a>\n\n`;
+      // ساخت پیام
+      message += `${i + 1} - <b>${persianNames[i]}</b> (${productionYears[i]}) ${countryNames[i]}  👇\n`;
+      message += `😍 <a href="${linksList[i]}">"${englishNames[i]}"</a>\n\n`;
 
-      // اگر اضافه کردن این رکورد پیام را از 3800 کاراکتر فراتر ببرد
-      if (message.length + filmMessage.length > maxMessageLength) {
-        await bot.sendMessage(chatId, message, {
-          parse_mode: "HTML",
-          disable_web_page_preview: true,
-        });
-        message = ""; // ریست کردن پیام
-      }
-
-      // اضافه کردن رکورد به پیام
-      message += filmMessage;
       count++;
 
-      // ذخیره‌سازی وضعیت پردازش
-      if (count === 30 || i === englishNames.length - 1) {
-        await bot.sendMessage(chatId, message, {
-          parse_mode: "HTML",
-          disable_web_page_preview: true,
-        });
+      // بررسی محدودیت طول پیام
+      if (message.length >= maxMessageLength || i === persianNames.length - 1) {
+        message += "\n@GlobCinema\n@Filmoseriyalerooz_Bot";
+        await bot.sendMessage(chatId, message, { parse_mode: "HTML" });
         message = ""; // ریست کردن پیام
-        saveProgress(i); // ذخیره شماره آخرین رکورد پردازش شده
+        saveProgress(i); // ذخیره آخرین ایندکس پردازش‌شده
       }
     }
 
-    // ارسال پیام باقی‌مانده
-    if (message.trim().length > 0) {
-      message += "\n@GlobCinema\n@Filmoseriyalerooz_Bot";
-      await bot.sendMessage(chatId, message, {
-        parse_mode: "HTML",
-        disable_web_page_preview: true,
-      });
-    }
+    bot.sendMessage(chatId, "✅ پردازش فایل به پایان رسید.");
+
   } catch (error) {
     console.error("Error processing the Excel file:", error);
     bot.sendMessage(chatId, "❌ خطا در پردازش فایل اکسل.");
