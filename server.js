@@ -7,13 +7,12 @@ const token = "8085649416:AAHI2L0h8ncv5zn4uaus4VrbRcF9btCcBTs"; // توکن رب
 const bot = new TelegramBot(token, { polling: true });
 
 // متغیرهای وضعیت ربات
-let isPaused = false;
+let rowIndexStart = 0; // ردیف شروع پردازش (ایندکس صفر)
 let persianNames = [];
 let englishNames = [];
 let linksList = [];
 let countryNames = [];
 let productionYears = [];
-let awaitingResponse = false;
 
 // مدیریت دستور `/start`
 bot.onText(/\/start/, (msg) => {
@@ -25,8 +24,7 @@ bot.onText(/\/start/, (msg) => {
   linksList = [];
   countryNames = [];
   productionYears = [];
-  awaitingResponse = true;
-  isPaused = false;
+  rowIndexStart = 0;
 
   bot.sendMessage(
     chatId,
@@ -34,18 +32,28 @@ bot.onText(/\/start/, (msg) => {
   );
 });
 
+// مدیریت دستور `/rowstart` برای تنظیم ردیف شروع
+bot.onText(/\/rowstart (\d+)/, (msg, match) => {
+  const chatId = msg.chat.id;
+
+  // بررسی صحت ورودی
+  const rowStartInput = parseInt(match[1], 10); // دریافت ورودی عدد
+  if (isNaN(rowStartInput) || rowStartInput < 1) {
+    bot.sendMessage(chatId, "❌ لطفاً یک شماره معتبر (بزرگتر از ۰) وارد کنید.");
+    return;
+  }
+
+  rowIndexStart = rowStartInput - 1; // تنظیم ردیف شروع (ایندکس صفر)
+  bot.sendMessage(
+    chatId,
+    `✅ شماره ردیف شروع به ${rowStartInput} تنظیم شد. اکنون فایل اکسل را ارسال کنید.`
+  );
+});
+
 // دریافت فایل اکسل
 bot.on("document", async (msg) => {
   const chatId = msg.chat.id;
   const fileId = msg.document.file_id;
-
-  if (isPaused) {
-    bot.sendMessage(
-      chatId,
-      "⏸️ ربات متوقف است. لطفاً با دستور /resume آن را فعال کنید."
-    );
-    return;
-  }
 
   try {
     // دریافت فایل
@@ -83,7 +91,7 @@ bot.on("document", async (msg) => {
       let message = ""; // پیام اصلی
       let maxMessageLength = 3800; // محدودیت تلگرام
 
-      for (let i = 0; i < englishNames.length; i++) {
+      for (let i = rowIndexStart; i < englishNames.length; i++) {
         // بررسی فیلدهای خالی
         if (
           !persianNames[i] ||
@@ -128,7 +136,6 @@ bot.on("document", async (msg) => {
         "تعداد نام‌های فارسی، نام‌های انگلیسی، لینک‌ها، سال تولید و کشورها باید برابر باشد. لطفا دوباره امتحان کنید."
       );
     }
-    awaitingResponse = false; // پایان انتظار
   } catch (error) {
     console.error("Error processing the Excel file:", error);
     bot.sendMessage(chatId, "❌ خطا در پردازش فایل اکسل.");
