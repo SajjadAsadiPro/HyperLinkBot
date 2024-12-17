@@ -3,7 +3,7 @@ const axios = require("axios");
 const XLSX = require("xlsx"); // برای خواندن فایل اکسل
 
 // تنظیم توکن ربات تلگرام و ایجاد ربات
-const token = "8085649416:AAHI2L0h8ncv5zn4uaus4VrbRcF9btCcBTs"; // توکن ربات خود را جایگزین کنید
+const token = "7507570606:AAHHGUTByGCeyKaVrcvSi3Lhn8D0BDvlLxI"; // توکن ربات خود را جایگزین کنید
 const bot = new TelegramBot(token, { polling: true });
 
 // متغیرهای وضعیت ربات
